@@ -57,33 +57,18 @@ mypthread_t* pop_thread() {
 
 int mypthread_create(mypthread_t *thread, void *(*start_routine)(void *),
 		void *arg) {
-	switch (policy_defined) {
-	case 0: //ULONLY
-		if (thread_count <= 0) {
-			mypthread_t* main_thread = (mypthread_t *) malloc(
-					sizeof(mypthread_t));
-			main_thread->thread_id = ++thread_count;
-			ucontext_t* context = (ucontext_t*) malloc(sizeof(ucontext_t));
-			main_thread->ctx = context;
-			main_thread->ctx->uc_stack.ss_sp = (char*) malloc(
-					sizeof(char) * 4096);
-			main_thread->ctx->uc_stack.ss_size = 4096;
-			main_thread->cur_state = PS_ACTIVE;
-			push_thread(main_thread);
-		}
-		break;
-	case 1: //KLMATCHCORES
-		if (no_of_kt < get_no_of_cores()) {
+	mypthread_create_start();
 
-		}
-		break;
-	case 2: //KLMATCHHYPER
-		break;
-	case 3: //KLALWAYS
-		break;
-	default:
-		break;
-	}
+	if (thread_count <= 0) {
+		mypthread_t* main_thread = (mypthread_t *) malloc(sizeof(mypthread_t));
+		main_thread->thread_id = ++thread_count;
+		ucontext_t* context = (ucontext_t*) malloc(sizeof(ucontext_t));
+		main_thread->ctx = context;
+		main_thread->ctx->uc_stack.ss_sp = (char*) malloc(sizeof(char) * 4096);
+		main_thread->ctx->uc_stack.ss_size = 4096;
+		main_thread->cur_state = PS_ACTIVE;
+		push_thread(main_thread);
+	} //create userlevel thread
 	ucontext_t* context = (ucontext_t*) malloc(sizeof(ucontext_t));
 	thread->ctx = context;
 	getcontext(thread->ctx);
@@ -95,6 +80,50 @@ int mypthread_create(mypthread_t *thread, void *(*start_routine)(void *),
 	push_thread(thread);
 
 	return 0;
+}
+void mypthread_create_start() {
+	switch (policy_defined) {
+	case 0: //ULONLY
+		//do nothing create will work
+		break;
+	case 1: //KLMATCHCORES
+		if (no_of_kt < get_no_of_cores()) {
+			//create kernel thread
+			// Call the clone system call to create the child thread
+			pid = clone(&threadFunction, (char*) stack + FIBER_STACK,
+					SIGCHLD | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_VM,
+					0);
+			if (pid == -1) {
+				perror("clone");
+				exit(2);
+			}
+		}
+		break;
+	case 2: //KLMATCHHYPER
+		if (no_of_kt < get_no_of_hyperthreads()) {
+			//create kernel thread
+			// Call the clone system call to create the child thread
+			pid = clone(&threadFunction, (char*) stack + FIBER_STACK,
+					SIGCHLD | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_VM,
+					0);
+			if (pid == -1) {
+				perror("clone");
+				exit(2);
+			}
+		}
+		break;
+	case 3: //KLALWAYS
+		pid = clone(&threadFunction, (char*) stack + FIBER_STACK,
+				SIGCHLD | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_VM, 0);
+		if (pid == -1) {
+			perror("clone");
+			exit(2);
+		}
+
+		break;
+	default:
+		break;
+	}
 }
 /*
  * ULONLY: only create a new user-level thread.
