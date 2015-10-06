@@ -1,18 +1,32 @@
-#include <mypthread.h>
+#include "mypthread.h"
+#include "kernelthreadcount.c"
 
-#define ULONLY 0;
-#define KLMATCHCORES 1;
-#define KLMATCHHYPER 2;
-#define KLALWAYS 3;
-
+static int policy_defined = ULONLY
+;
+static int no_of_kt = 0;
 static int thread_count = 0;
+
 struct thread_node {
-	struct tcb_thread *tcb;
+	mypthread_t *tcb;
 	struct thread_node *next;
 };
 struct thread_node *front;
 struct thread_node *rear;
-void push_thread(struct tcb_thread *tcb) {
+
+//remove when done
+void traverse() {
+	struct thread_node *temp;
+	temp = front;
+	if (front != NULL) {
+		printf("element--%d\n", (int) front->tcb->thread_id);
+	}
+	while (temp->next != front) {
+		printf("element--%d\n", (int) temp->tcb->thread_id);
+		temp = temp->next;
+	}
+}
+//end //remove when done
+void push_thread(mypthread_t *tcb) {
 	struct thread_node *temp = malloc(sizeof(struct thread_node));
 	temp->tcb = tcb;
 	temp->next = NULL;
@@ -26,11 +40,11 @@ void push_thread(struct tcb_thread *tcb) {
 	rear->next = front;
 }
 
-struct tcb_thread* pop_thread() {
-	struct tcb_thread* tcb = malloc(sizeof(struct tcb_thread));
+mypthread_t* pop_thread() {
+	mypthread_t *tcb = malloc(sizeof(mypthread_t));
 	struct thread_node *temp;
 	if (front == rear | front == NULL) {
-		printf('Empty Q');
+		printf("Empty Q");
 	} else {
 		temp = front;
 		tcb = temp->tcb;
@@ -41,15 +55,42 @@ struct tcb_thread* pop_thread() {
 	return tcb;
 }
 
-int mypthread_create(tcb_thread *thread, void *(*start_routine)(void *),
+int mypthread_create(mypthread_t *thread, void *(*start_routine)(void *),
 		void *arg) {
+	switch (policy_defined) {
+	case 0: //ULONLY
+		if (thread_count <= 0) {
+			mypthread_t* main_thread = (mypthread_t *) malloc(
+					sizeof(mypthread_t));
+			main_thread->thread_id = ++thread_count;
+			ucontext_t* context = (ucontext_t*) malloc(sizeof(ucontext_t));
+			main_thread->ctx = context;
+			main_thread->ctx->uc_stack.ss_sp = (char*) malloc(
+					sizeof(char) * 4096);
+			main_thread->ctx->uc_stack.ss_size = 4096;
+			main_thread->cur_state = PS_ACTIVE;
+			push_thread(main_thread);
+		}
+		break;
+	case 1: //KLMATCHCORES
+		if (no_of_kt < get_no_of_cores()) {
+
+		}
+		break;
+	case 2: //KLMATCHHYPER
+		break;
+	case 3: //KLALWAYS
+		break;
+	default:
+		break;
+	}
 	ucontext_t* context = (ucontext_t*) malloc(sizeof(ucontext_t));
 	thread->ctx = context;
 	getcontext(thread->ctx);
 	(*thread).ctx->uc_stack.ss_sp = (char*) malloc(sizeof(char) * 4096);
 	(*thread).ctx->uc_stack.ss_size = 4096;
-	(*thread).state = PS_ACTIVE;
-	thread->th_id = thread_count++;
+	(*thread).cur_state = PS_ACTIVE;
+	thread->thread_id = thread_count++;
 	makecontext(thread->ctx, (void (*)()) start_routine, 1, arg);
 	push_thread(thread);
 
@@ -64,31 +105,6 @@ int mypthread_create(tcb_thread *thread, void *(*start_routine)(void *),
  * KLALWAYS: always create a user-level thread and a kernel-level thread.
  * */
 
-int mypthread_init(int kt) {
-	switch (kt) {
-	case 0: //ULONLY
-		if (thread_count <= 0) {
-			tcb_thread* main_thread = (tcb_thread *) malloc(
-					sizeof(tcb_thread));
-			main_thread->th_id = thread_count++;
-			ucontext_t* context = (ucontext_t*) malloc(sizeof(ucontext_t));
-			main_thread->ctx = context;
-			main_thread->ctx->uc_stack.ss_sp = (char*) malloc(
-					sizeof(char) * 4096);
-			main_thread->ctx->uc_stack.ss_size = 4096;
-			main_thread->state = PS_ACTIVE;
-			push_thread(main_thread);
-		}
-		break;
-	case 1: //KLMATCHCORES
-
-		break;
-	case 2: //KLMATCHHYPER
-		break;
-	case 3: //KLALWAYS
-		break;
-	default:
-		break;
-	}
-	return 0;
+void mypthread_init(int kt) {
+	policy_defined = kt;
 }
